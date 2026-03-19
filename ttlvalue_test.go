@@ -1,4 +1,4 @@
-package cache
+package cachekit
 
 import (
 	"context"
@@ -96,6 +96,21 @@ func TestNewCachedValueE_InvalidTTL(t *testing.T) {
 	require.Error(t, err)
 	_, err = NewCachedValueE[int](context.Background(), "k", -time.Second)
 	require.Error(t, err)
+}
+
+func TestNewCachedValueE_EmptyKey(t *testing.T) {
+	t.Parallel()
+	_, err := NewCachedValueE[int](context.Background(), "", time.Minute)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "non-empty")
+}
+
+func TestCachedValue_Stop_DoubleCall(t *testing.T) {
+	t.Parallel()
+	v, err := NewCachedValueE[int](context.Background(), "k", time.Minute)
+	require.NoError(t, err)
+	v.Stop()
+	v.Stop()
 }
 
 func TestCachedValue_WithLoadTimeout(t *testing.T) {

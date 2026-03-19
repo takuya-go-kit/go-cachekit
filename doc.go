@@ -1,16 +1,16 @@
-// Package cache provides Redis-backed and in-memory caching and key-value stores.
+// Package cachekit provides Redis-backed and in-memory caching and key-value stores.
 //
 // # Redis connection
 //
 // NewRedisClient builds a redis-go client from RedisConfig and verifies connectivity with Ping.
 // Host and Port are required; PoolSize and MinIdleConns default to 50 and 10 when zero.
-// Do not log RedisConfig as-is; use GoString() to avoid exposing Password.
+// Do not log RedisConfig as-is; use String() or GoString() for safe output (password is redacted).
 //
 // # Redis JSON cache (Cache)
 //
 // New returns a Cache that uses the given *redis.Client. Optional CacheOptions (e.g. WithMaxVersionMapEntries) configure the cache. Values are serialized as JSON. Cache keys must be non-empty.
 //
-//   - GetOrLoad[T]: returns the value for key from Redis, or runs loadFn(ctx), stores the result with ttl, and returns it.
+//   - GetOrLoad[T]: package-level function (not a method) because Go has no generic methods on types. Call as GetOrLoad(c, ctx, key, ttl, loadFn, opts...). Returns the value for key from Redis, or runs loadFn(ctx), stores the result with ttl, and returns it.
 //     loadFn receives the request context and may respect context cancellation. Uses singleflight so concurrent
 //     requests for the same key run loadFn once. Use each key with exactly one type T; using the same key with
 //     different T causes a type error. ttl must be positive.
@@ -19,11 +19,11 @@
 //   - DeleteByPrefix: scans keys matching prefix*, Unlinks them, and forgets them in singleflight. prefix must be non-empty.
 //     Redis glob characters (\, *, ?, [, ]) in prefix are escaped.
 //
-// GetOrLoad options: pass WithTimeout(d) and/or WithRespectCallerCancel(true) as variadic opts.
+// GetOrLoad options: pass WithTimeout(d) and/or WithRespectCallerCancel(true) as variadic opts (type GetOrLoadOption). Resolved options are in GetOrLoadOpts.
 // Optional WithMaxVersionMapEntries(n) limits in-memory version map size; when exceeded, excess entries are evicted (no ordering guarantee).
 // GetOrLoad caveats: Del and DeleteByPrefix increment a per-key version; a load that completes after the key was
-// deleted will not write back to Redis. If loadFn succeeds but Redis Set fails, GetOrLoad returns (data, err)—caller
-// gets the data but the cache is not updated (best-effort). Consistency is best-effort: there is a small race window
+// deleted will not write back to Redis. If loadFn succeeds but Redis Set fails, GetOrLoad returns (data, setErr)—caller
+// gets both the data and the set error. Consistency is best-effort: there is a small race window
 // between the in-memory version check and Redis Set; if Del runs in that window, a stale value may be written back.
 // Values have TTL and will expire.
 //
@@ -31,16 +31,16 @@
 //
 // NewBoundedCache[K, V](maxSize) creates a FIFO cache with at most maxSize entries (DefaultBoundedCacheSize when maxSize <= 0).
 // Eviction is O(1) per slot via a ring buffer with lazy delete: Delete removes the key but leaves a ghost slot in the ring;
-// ghosts are cleared on eviction so FIFO order is preserved. After many Deletes without Set, the next Set may take O(maxSize) steps to clear ghost slots. Set updates existing keys in place without changing eviction order. SetIfAbsent adds the entry only if the key is not present. Safe for concurrent use.
+// ghosts are cleared on eviction so FIFO order is preserved. Delete reclaims head ghost slots so the next Set avoids O(maxSize) steps. Set updates existing keys in place without changing eviction order. SetIfAbsent adds the entry only if the key is not present. Len returns the number of entries; Cap returns maxSize. Safe for concurrent use.
 //
 // # Single-value TTL cache (CachedValue)
 //
 // CachedValue caches one value by key with TTL and singleflight. Prefer NewCachedValueE (returns error) over NewCachedValue (panics if ttl <= 0) for config-driven or dynamic ttl. When ctx is cancelled the internal goroutine stops. If ctx is context.Background(), the goroutine never exits until Stop is called—call Stop when the value is no longer needed to avoid goroutine leaks.
-// Get calls load with a configurable timeout (default 30s); use WithLoadTimeout(d) when constructing to override. GetStale returns only from cache. Invalidate clears the value and singleflight; an in-flight Get that finishes after Invalidate will not write back.
+// Get calls load with a configurable timeout (default 30s); use WithLoadTimeout(d) (CachedValueOption) when constructing to override. GetStale returns only from cache. Invalidate clears the value and singleflight; an in-flight Get that finishes after Invalidate will not write back.
 //
 // # Key-value store
 //
-// KeyValueStore is a minimal Get/Set/Del interface. RedisKeyValueStore implements it with *redis.Client. Set requires ttl > 0.
+// KeyValueStore is a minimal Get/Set/Del interface. Get returns []byte; Set accepts []byte. RedisKeyValueStore implements it with *redis.Client. Set requires ttl > 0.
 // Methods return ErrRedisNotConfigured when Client is nil.
 //
 // # Pub/Sub
@@ -60,4 +60,10 @@
 //
 // ErrRedisNotConfigured is returned by Cache, RedisKeyValueStore, and RedisPubSubStore when the Redis client is nil.
 // ErrNotFound is returned by KeyValueStore.Get when the key does not exist.
-package cache
+// ErrEmptyKey when key or keys are empty where non-empty is required.
+// ErrInvalidTTL when ttl is zero or negative.
+// ErrEmptyPrefix when prefix is empty for DeleteByPrefix.
+// ErrNilCachedValue when CachedValue.Get is called on nil receiver.
+// ErrUnexpectedType when cached value type does not match expected.
+// ErrRedisConfigNil, ErrRedisHostRequired, ErrRedisInvalidPort by NewRedisClient on invalid config.
+package cachekit

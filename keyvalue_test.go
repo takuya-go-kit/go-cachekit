@@ -1,4 +1,4 @@
-package cache
+package cachekit
 
 import (
 	"context"
@@ -46,6 +46,22 @@ func TestRedisKeyValueStore_Get_NotFound_ReturnsErrNotFound(t *testing.T) {
 	val, err := store.Get(context.Background(), "missing")
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrNotFound)
-	assert.Empty(t, val)
+	assert.Nil(t, val)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+func TestRedisKeyValueStore_SetGet_RoundTrip(t *testing.T) {
+	t.Parallel()
+	client, mock := redismock.NewClientMock()
+	payload := []byte(`{"x":1}`)
+	mock.ExpectSet("k", payload, time.Minute).SetVal("OK")
+	mock.ExpectGet("k").SetVal(string(payload))
+	store := &RedisKeyValueStore{Client: client}
+	ctx := context.Background()
+	err := store.Set(ctx, "k", payload, time.Minute)
+	require.NoError(t, err)
+	got, err := store.Get(ctx, "k")
+	require.NoError(t, err)
+	assert.Equal(t, payload, got)
 	require.NoError(t, mock.ExpectationsWereMet())
 }

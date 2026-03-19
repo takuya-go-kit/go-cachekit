@@ -1,4 +1,4 @@
-package cache
+package cachekit
 
 import (
 	"context"
@@ -6,18 +6,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 )
-
-func ExampleRedisPubSubStore_Subscribe() {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	store := &RedisPubSubStore{}
-	ch, err := store.Subscribe(ctx, "example")
-	if err != nil {
-		return
-	}
-	for range ch {
-	}
-}
 
 func TestRedisPubSubStore_NilClient_Publish(t *testing.T) {
 	t.Parallel()

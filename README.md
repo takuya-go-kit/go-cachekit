@@ -37,7 +37,7 @@ import "github.com/TakuyaYagam1/go-cachekit"
 ### Redis client
 
 - **RedisConfig** — Host, Port, Password, PoolSize, MinIdleConns
-- **NewRedisClient(cfg)** — NewClient + Ping; error if unreachable
+- **NewRedisClient(ctx, cfg)** — NewClient + Ping; error if unreachable
 
 ### Stores
 
@@ -48,18 +48,18 @@ import "github.com/TakuyaYagam1/go-cachekit"
 ## Example
 
 ```go
-rdb, err := cache.NewRedisClient(&cache.RedisConfig{Host: "localhost", Port: "6379"})
+rdb, err := cachekit.NewRedisClient(ctx, &cachekit.RedisConfig{Host: "localhost", Port: 6379})
 if err != nil {
     log.Fatal(err)
 }
 defer rdb.Close()
 
-c := cache.New(rdb)
-val, err := cache.GetOrLoad(c, ctx, "user:1", 5*time.Minute, func() (User, error) {
+c := cachekit.New(rdb)
+val, err := cachekit.GetOrLoad(c, ctx, "user:1", 5*time.Minute, func(ctx context.Context) (User, error) {
     return db.GetUser(ctx, 1)
 })
 
-mem := cache.NewBoundedCache[string, string](1000)
+mem := cachekit.NewBoundedCache[string, string](1000)
 mem.Set("k", "v")
 if v, ok := mem.Get("k"); ok {
     // v == "v"

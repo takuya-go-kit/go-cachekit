@@ -1,33 +1,34 @@
-package cache
+package cachekit
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 )
 
-// ErrRedisNotConfigured is returned by Cache, RedisKeyValueStore, and RedisPubSubStore when the Redis client is nil.
-var ErrRedisNotConfigured = errors.New("redis client not configured")
-
-// OnDropFunc is called synchronously when a message is dropped because SendTimeout was exceeded; return quickly to avoid blocking the subscribe loop. Optional; nil means no callback.
+// OnDropFunc is called when a message is dropped because SendTimeout was exceeded.
+// Return quickly to avoid blocking the subscribe loop. Optional; nil means no callback.
 type OnDropFunc func(channel, payload string)
 
-// RedisPubSubStore implements PubSubStore using a Redis client.
-// Client must be non-nil and must not be replaced after creation. ChanBufferSize is the buffer size for the channel returned by Subscribe (default 64 if <= 0).
-// SendTimeout, when > 0, limits how long the goroutine waits to send a message to the returned channel; if exceeded, the message is dropped and OnDrop is called if set.
+// RedisPubSubStore implements PubSubStore using a Redis client. Client must be non-nil.
 type RedisPubSubStore struct {
-	Client         *redis.Client
+	// Client is the Redis client used for Publish and Subscribe. Must not be nil.
+	Client *redis.Client
+	// ChanBufferSize is the buffer size for the channel returned by Subscribe;
+	// zero or negative uses 64.
 	ChanBufferSize int
-	SendTimeout    time.Duration
-	OnDrop         OnDropFunc
+	// SendTimeout limits how long the subscribe goroutine waits to send a message;
+	// when exceeded, the message is dropped and OnDrop is called if set. Zero uses 30s.
+	SendTimeout time.Duration
+	// OnDrop is called when a message is dropped due to SendTimeout; nil disables the callback.
+	OnDrop OnDropFunc
 }
 
 var _ PubSubStore = (*RedisPubSubStore)(nil)
 
-// Publish sends message to channel. Returns ErrRedisNotConfigured if Client is nil.
+// Publish sends message to the given channel. Returns ErrRedisNotConfigured if the receiver or Client is nil.
 func (r *RedisPubSubStore) Publish(ctx context.Context, channel, message string) error {
 	if r == nil || r.Client == nil {
 		return ErrRedisNotConfigured
@@ -35,11 +36,12 @@ func (r *RedisPubSubStore) Publish(ctx context.Context, channel, message string)
 	return r.Client.Publish(ctx, channel, message).Err()
 }
 
-// Subscribe returns a channel of messages for the given channel. The goroutine receiving from Redis
-// exits when ctx is cancelled or when the subscription is closed. The caller MUST cancel ctx when
-// done (e.g. defer cancel()) to release the goroutine and close the returned channel; otherwise the
-// goroutine will block when the channel buffer is full and will leak. Do not stop reading from the
-// returned channel without cancelling ctx. See package doc for a usage example.
+// Subscribe returns a channel that receives messages published to the given channel.
+// A background goroutine reads from Redis until ctx is cancelled.
+// Caller must cancel ctx when done (e.g. defer cancel()) to release the goroutine
+// and close the returned channel; otherwise the goroutine may block and leak.
+// Do not stop reading from the channel without cancelling ctx.
+// Returns ErrRedisNotConfigured if the receiver or Client is nil. See package doc for usage.
 func (r *RedisPubSubStore) Subscribe(ctx context.Context, channel string) (<-chan string, error) {
 	if r == nil || r.Client == nil {
 		return nil, ErrRedisNotConfigured
@@ -67,23 +69,13 @@ func (r *RedisPubSubStore) Subscribe(ctx context.Context, channel string) (<-cha
 			select {
 			case <-ctx.Done():
 				if timer != nil {
-					if !timer.Stop() {
-						select {
-						case <-timer.C:
-						default:
-						}
-					}
+					timer.Stop()
 				}
 				return
 			case msg, ok := <-pubsub.Channel():
 				if !ok {
 					if timer != nil {
-						if !timer.Stop() {
-							select {
-							case <-timer.C:
-							default:
-							}
-						}
+						timer.Stop()
 					}
 					return
 				}
@@ -94,18 +86,9 @@ func (r *RedisPubSubStore) Subscribe(ctx context.Context, channel string) (<-cha
 				}
 				select {
 				case out <- msg.Payload:
-					if !timer.Stop() {
-						<-timer.C
-					}
+					timer.Stop()
 				case <-ctx.Done():
-					if timer != nil {
-						if !timer.Stop() {
-							select {
-							case <-timer.C:
-							default:
-							}
-						}
-					}
+					timer.Stop()
 					return
 				case <-timer.C:
 					if onDrop != nil {

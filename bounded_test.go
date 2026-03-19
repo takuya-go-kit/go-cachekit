@@ -1,4 +1,4 @@
-package cache
+package cachekit
 
 import (
 	"fmt"
@@ -168,4 +168,39 @@ func TestBoundedCache_DeleteHeadThenSet_FIFOPreserved(t *testing.T) {
 	require.True(t, oke)
 	assert.Equal(t, 5, ve)
 	assert.Equal(t, 3, c.Len())
+}
+
+func TestBoundedCache_MassDeleteThenSet_ReclaimsSlots(t *testing.T) {
+	t.Parallel()
+	c := NewBoundedCache[string, int](5)
+	c.Set("a", 1)
+	c.Set("b", 2)
+	c.Set("c", 3)
+	c.Set("d", 4)
+	c.Set("e", 5)
+	assert.Equal(t, 5, c.Len())
+	assert.Equal(t, 5, c.Cap())
+	c.Delete("a")
+	c.Delete("b")
+	c.Delete("c")
+	assert.Equal(t, 2, c.Len())
+	c.Set("f", 6)
+	c.Set("g", 7)
+	assert.Equal(t, 4, c.Len())
+	_, ok := c.Get("d")
+	require.True(t, ok)
+	_, ok = c.Get("e")
+	require.True(t, ok)
+	_, ok = c.Get("f")
+	require.True(t, ok)
+	_, ok = c.Get("g")
+	require.True(t, ok)
+}
+
+func TestBoundedCache_Cap(t *testing.T) {
+	t.Parallel()
+	c := NewBoundedCache[string, int](42)
+	assert.Equal(t, 42, c.Cap())
+	var nilCache *BoundedCache[string, int]
+	assert.Equal(t, 0, nilCache.Cap())
 }

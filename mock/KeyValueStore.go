@@ -105,22 +105,24 @@ func (_c *MockKeyValueStore_Del_Call) RunAndReturn(run func(ctx context.Context,
 }
 
 // Get provides a mock function for the type MockKeyValueStore
-func (_mock *MockKeyValueStore) Get(ctx context.Context, key string) (string, error) {
+func (_mock *MockKeyValueStore) Get(ctx context.Context, key string) ([]byte, error) {
 	ret := _mock.Called(ctx, key)
 
 	if len(ret) == 0 {
 		panic("no return value specified for Get")
 	}
 
-	var r0 string
+	var r0 []byte
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (string, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) ([]byte, error)); ok {
 		return returnFunc(ctx, key)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) string); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) []byte); ok {
 		r0 = returnFunc(ctx, key)
 	} else {
-		r0 = ret.Get(0).(string)
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]byte)
+		}
 	}
 	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
 		r1 = returnFunc(ctx, key)
@@ -160,12 +162,12 @@ func (_c *MockKeyValueStore_Get_Call) Run(run func(ctx context.Context, key stri
 	return _c
 }
 
-func (_c *MockKeyValueStore_Get_Call) Return(s string, err error) *MockKeyValueStore_Get_Call {
-	_c.Call.Return(s, err)
+func (_c *MockKeyValueStore_Get_Call) Return(bytes []byte, err error) *MockKeyValueStore_Get_Call {
+	_c.Call.Return(bytes, err)
 	return _c
 }
 
-func (_c *MockKeyValueStore_Get_Call) RunAndReturn(run func(ctx context.Context, key string) (string, error)) *MockKeyValueStore_Get_Call {
+func (_c *MockKeyValueStore_Get_Call) RunAndReturn(run func(ctx context.Context, key string) ([]byte, error)) *MockKeyValueStore_Get_Call {
 	_c.Call.Return(run)
 	return _c
 }

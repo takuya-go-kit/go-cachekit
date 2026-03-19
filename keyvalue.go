@@ -1,4 +1,4 @@
-package cache
+package cachekit
 
 import (
 	"context"
@@ -9,14 +9,11 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// ErrNotFound is returned by KeyValueStore.Get when the key does not exist.
-var ErrNotFound = errors.New("cache: key not found")
-
-// KeyValueStore is a minimal get/set/del store.
-// Get returns string (Redis and most backends expose values as strings); Set accepts []byte so callers can pass serialized payloads (e.g. json.Marshal) without conversion.
+// KeyValueStore is a minimal key-value store with Get, Set, and Del.
+// Get and Set use []byte for symmetric serialized payloads (e.g. json.Marshal/Unmarshal). Set requires a positive TTL.
 type KeyValueStore interface {
-	// Get returns the value for key as a string, or an error if missing or the store is unavailable.
-	Get(ctx context.Context, key string) (string, error)
+	// Get returns the value for key as bytes, or an error if missing or the store is unavailable.
+	Get(ctx context.Context, key string) ([]byte, error)
 	// Set stores value at key with the given ttl. ttl must be positive. Value is raw bytes (e.g. JSON); no encoding is applied.
 	Set(ctx context.Context, key string, value []byte, ttl time.Duration) error
 	// Del removes the given keys. No-op if keys is empty.
@@ -26,39 +23,40 @@ type KeyValueStore interface {
 // RedisKeyValueStore implements KeyValueStore using a Redis client.
 // Client must be non-nil and must not be replaced after creation; otherwise methods return ErrRedisNotConfigured.
 type RedisKeyValueStore struct {
+	// Client is the Redis client used for Get, Set, and Del. Must not be nil.
 	Client *redis.Client
 }
 
 var _ KeyValueStore = (*RedisKeyValueStore)(nil)
 
-// Get returns the value for key from Redis. Returns ErrNotFound when the key does not exist, ErrRedisNotConfigured if Client is nil. Key must be non-empty.
-func (r *RedisKeyValueStore) Get(ctx context.Context, key string) (string, error) {
+// Get returns the value for key from Redis as bytes. Returns ErrNotFound when the key does not exist, ErrRedisNotConfigured if Client is nil, ErrEmptyKey if key is empty.
+func (r *RedisKeyValueStore) Get(ctx context.Context, key string) ([]byte, error) {
 	if r == nil || r.Client == nil {
-		return "", ErrRedisNotConfigured
+		return nil, ErrRedisNotConfigured
 	}
 	if key == "" {
-		return "", fmt.Errorf("keyvalue get: key must be non-empty")
+		return nil, ErrEmptyKey
 	}
-	val, err := r.Client.Get(ctx, key).Result()
+	val, err := r.Client.Get(ctx, key).Bytes()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
-			return "", ErrNotFound
+			return nil, ErrNotFound
 		}
-		return "", fmt.Errorf("keyvalue get: %w", err)
+		return nil, fmt.Errorf("keyvalue get: %w", err)
 	}
 	return val, nil
 }
 
-// Set writes value at key with ttl. ttl must be positive. Returns ErrRedisNotConfigured if Client is nil. Key must be non-empty.
+// Set writes value at key with the given ttl. ttl must be positive. Returns ErrRedisNotConfigured if Client is nil, ErrEmptyKey if key is empty, ErrInvalidTTL if ttl <= 0.
 func (r *RedisKeyValueStore) Set(ctx context.Context, key string, value []byte, ttl time.Duration) error {
 	if r == nil || r.Client == nil {
 		return ErrRedisNotConfigured
 	}
 	if key == "" {
-		return fmt.Errorf("keyvalue set: key must be non-empty")
+		return ErrEmptyKey
 	}
 	if ttl <= 0 {
-		return fmt.Errorf("keyvalue set: ttl must be positive, got %v", ttl)
+		return fmt.Errorf("keyvalue set: %w, got %v", ErrInvalidTTL, ttl)
 	}
 	if err := r.Client.Set(ctx, key, value, ttl).Err(); err != nil {
 		return fmt.Errorf("keyvalue set: %w", err)
@@ -66,7 +64,7 @@ func (r *RedisKeyValueStore) Set(ctx context.Context, key string, value []byte, 
 	return nil
 }
 
-// Del removes the given keys from Redis. Returns ErrRedisNotConfigured if Client is nil. All keys must be non-empty.
+// Del removes the given keys from Redis. No-op if keys is empty. Returns ErrRedisNotConfigured if Client is nil, ErrEmptyKey if any key is empty.
 func (r *RedisKeyValueStore) Del(ctx context.Context, keys ...string) error {
 	if r == nil || r.Client == nil {
 		return ErrRedisNotConfigured
@@ -76,7 +74,7 @@ func (r *RedisKeyValueStore) Del(ctx context.Context, keys ...string) error {
 	}
 	for _, k := range keys {
 		if k == "" {
-			return fmt.Errorf("keyvalue del: key must be non-empty")
+			return ErrEmptyKey
 		}
 	}
 	if err := r.Client.Del(ctx, keys...).Err(); err != nil {
