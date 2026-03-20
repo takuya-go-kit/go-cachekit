@@ -1,4 +1,4 @@
-module github.com/TakuyaYagam1/go-cachekit
+module github.com/takuya-go-kit/go-cachekit
 
 go 1.25.0
 
